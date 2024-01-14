@@ -1,18 +1,34 @@
 const CustomError = require('../errors');
-const {isTokenValid}= require('../utils');
+const {isTokenValid, attachCookiesToResponse}= require('../utils');
+const Token = require('../models/Token');
+const { exist } = require('joi');
 
 const authenticateUser = async(req,res,next)=>{
-    const token = req.signedCookies.token;
-    if(!token){
-        throw new CustomError.UnauthenticatedError("Authnetication Invalid");
-    }
-    
+    const {refreshToken,accessToken} =req.signedCookies;
     try {
-        // const paylod = isTokenValid({token}); can do like this also
-        const {name,userId,role} = isTokenValid({token});
-        req.user ={name,userId,role};
+        if(accessToken){// access Token exists mein that it is valid, as it's existing check is made in the controller only
+            const payload = isTokenValid(accessToken);
+            req.user=payload.user;
+            return next();
+        }
+        const payload = isTokenValid(refreshToken);
+        
+        const existingToken = await Token.findOne({
+            user:payload.user.userId,
+            refreshToken:payload.refreshToken,
+        });
+
+        if(!existingToken || !existingToken?.isValid){
+            
+            throw new CustomError.UnauthenticatedError('Authnetication Invalid');
+        }
+
+        attachCookiesToResponse({res,user:payload.user,refreshToken:payload.refreshToken});
+        
+        req.user=payload.user;
         next();
     } catch (error) {
+        
         throw new CustomError.UnauthenticatedError("Authnetication Invalid");
     }
 }

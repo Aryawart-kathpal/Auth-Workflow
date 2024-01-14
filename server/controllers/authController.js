@@ -1,5 +1,6 @@
 require('dotenv').config();
 const User =require('../models/User');
+const Token = require('../models/Token');
 const {StatusCodes} = require('http-status-codes');
 const CustomError = require('../errors');
 const jwt = require('jsonwebtoken');
@@ -27,17 +28,17 @@ const register = async(req,res)=>{
     const origin = 'http://localhost:3000';
     // const newOrigin = 'http://react-node-user-workflow-frront-end.netlify.app';
 
-    const tempOrigin = req.get(`origin`);// this will be where backend is functioning
-    console.log(`origin: ${tempOrigin}`);
-    const protocol = req.protocol;
-    console.log(`protocol: ${protocol}`);
-    const host = req.get(`host`);
-    console.log(`host: ${host}`);
+    // const tempOrigin = req.get(`origin`);// this will be where backend is functioning
+    // console.log(`origin: ${tempOrigin}`);
+    // const protocol = req.protocol;
+    // console.log(`protocol: ${protocol}`);
+    // const host = req.get(`host`);
+    // console.log(`host: ${host}`);
 
-    const forwardedHost = req.get(`x-forwarded-host`);
-    console.log(`forwarded host: ${forwardedHost}`);
-    const forwardedProtocol = req.get(`x-forwarded-proto`);
-    console.log(`Forwarded Protocol: ${forwardedProtocol}`);
+    // const forwardedHost = req.get(`x-forwarded-host`);
+    // console.log(`forwarded host: ${forwardedHost}`);
+    // const forwardedProtocol = req.get(`x-forwarded-proto`);
+    // console.log(`Forwarded Protocol: ${forwardedProtocol}`);
     
     await sendVerificationEmail({email:user.email,name:user.name,verificationToken:user.verificationToken,origin});
 
@@ -87,14 +88,43 @@ const login = async(req,res)=>{
     }
 
     const tokenUser =createTokenUser(user);
-    attachCookiesToResponse({res,user:tokenUser});
 
+    //create refresh token
+    let refreshToken ='';
+    //check for existing token
+    const existingToken=await Token.findOne({user:user._id});
+    if(existingToken){
+        const {isValid} = existingToken;    
+        if(!isValid){
+            throw new CustomError.UnauthenticatedError('Invalid Credentials');
+        }
+        refreshToken=existingToken.refreshToken;
+        attachCookiesToResponse({res,user:tokenUser,refreshToken});
+        res.status(StatusCodes.OK).json({user : tokenUser});
+        return;
+    }
+
+    refreshToken=crypto.randomBytes(40).toString('hex');
+    const userAgent = req.headers['user-agent'];
+    const ip=req.ip;
+    const userToken = {refreshToken,ip,userAgent,user:user._id};
+
+    await Token.create(userToken);
+
+    attachCookiesToResponse({res,user:tokenUser,refreshToken});
     res.status(StatusCodes.OK).json({user : tokenUser});
 }
 
 // we expire the cookie and in console, we find that req.signedCookies has empty object with no token 
 const logout = async(req,res)=>{
-    res.cookie('token','logout',{
+    await Token.findOneAndDelete({user:req.user.userId});
+
+    res.cookie('accessToken','logout',{
+        httpOnly:true,
+        expires : new Date(Date.now()/*+5*1000*/),
+    })
+
+    res.cookie('refreshToken','logout',{
         httpOnly:true,
         expires : new Date(Date.now()/*+5*1000*/),
     })
