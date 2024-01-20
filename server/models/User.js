@@ -38,6 +38,12 @@ const userSchema = new mongoose.Schema({
         default:false,
     },
     verified:Date,
+    passwordToken :{
+        type:String,
+    },
+    passwordTokenExpirationDate:{
+        type:Date,
+    },
 })
 
 // this.modifiedPaths() is an array of all the paths that have been modified

@@ -4,7 +4,7 @@ const Token = require('../models/Token');
 const {StatusCodes} = require('http-status-codes');
 const CustomError = require('../errors');
 const jwt = require('jsonwebtoken');
-const {attachCookiesToResponse,createTokenUser,sendVerificationEmail} = require('../utils');
+const {attachCookiesToResponse,createTokenUser,sendVerificationEmail,sendResetPasswordEmail,createHash} = require('../utils');
 const crypto = require('crypto');
 
 const register = async(req,res)=>{
@@ -131,5 +131,48 @@ const logout = async(req,res)=>{
     res.status(StatusCodes.OK).json({msg:"user logged out"});
 }
 
+const forgotPassword = async(req,res)=>{
+    const {email} = req.body;
+    if(!email){
+        throw new CustomError.BadRequestError('Please provide email');
+    }
+    const user = await User.findOne({email});
 
-module.exports={register,login,logout,verifyEmail};
+    // we always send the message because we don't want to tell any random user if the given email exists or not in my database
+    if(user){
+        const passwordToken = crypto.randomBytes(70).toString('hex');
+        // send email
+        const origin = 'http://localhost:3000';
+        await sendResetPasswordEmail({name:user.name,email:user.email,token:passwordToken,origin});
+
+        const tenMinutes= 10*60*1000;
+        const passwordTokenExpirationDate = new Date(Date.now()+tenMinutes);
+
+        user.passwordToken=createHash(passwordToken);
+        user.passwordTokenExpirationDate=passwordTokenExpirationDate;
+        await user.save();
+    }
+    res.status(StatusCodes.OK).json({msg:"Please check email for verification link"})
+}
+
+const resetPassword = async(req,res)=>{
+    const{email,token,password}= req.body;
+    if(!email || !token || !password){
+        throw new CustomError.BadRequestError('Please provide all values');
+    }
+    const user = await User.findOne({email});
+    
+    if(user){
+        const currentDate = new Date();
+        if(user.passwordToken===createHash(token) && user.passwordTokenExpirationDate>currentDate){
+            console.log("Hello");
+            user.password=password;
+            user.passwordToken=null;
+            user.passwordTokenExpirationDate=null;
+            await user.save();
+        }
+    }
+    res.status(StatusCodes.OK).json({msg:"Password reset"});
+}
+
+module.exports={register,login,logout,verifyEmail,forgotPassword,resetPassword};
