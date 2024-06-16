@@ -16,11 +16,11 @@ const register = async(req,res)=>{
     if(emailAlreadyExists){
         throw new CustomError.BadRequestError("Email already exists!!");
     }
-
+    
     // First registered user is the admin
     const isFirstAccout = await User.countDocuments({}) === 0;
     const role = isFirstAccout?'admin':'user';
-
+    
     const verificationToken = crypto.randomBytes(40).toString('hex'); // create 40 random hexadecimal bytes
 
     const user = await User.create({email,name,password,role,verificationToken});
